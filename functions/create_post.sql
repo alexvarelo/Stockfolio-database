@@ -4,7 +4,8 @@ CREATE OR REPLACE FUNCTION public.create_post(
     p_content TEXT,
     p_post_type VARCHAR(20) DEFAULT 'UPDATE',
     p_is_public BOOLEAN DEFAULT true,
-    p_portfolio_id UUID DEFAULT NULL
+    p_portfolio_id UUID DEFAULT NULL,
+    p_ticker VARCHAR(20) DEFAULT NULL
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -57,12 +58,14 @@ BEGIN
     INSERT INTO public.posts (
         user_id,
         portfolio_id,
+        ticker,
         content,
         post_type,
         is_public
     ) VALUES (
         p_user_id,
         p_portfolio_id,
+        p_ticker,
         p_content,
         p_post_type,
         p_is_public

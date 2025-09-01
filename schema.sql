@@ -87,6 +87,7 @@ CREATE TABLE public.posts (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
     portfolio_id UUID REFERENCES public.portfolios(id) ON DELETE CASCADE,
+    ticker VARCHAR(20),
     content TEXT NOT NULL,
     post_type VARCHAR(20) DEFAULT 'UPDATE' CHECK (post_type IN ('UPDATE', 'TRADE', 'ANALYSIS', 'GENERAL')),
     is_public BOOLEAN DEFAULT true,
@@ -174,6 +175,7 @@ CREATE INDEX idx_portfolio_follows_portfolio_id ON public.portfolio_follows(port
 CREATE INDEX idx_posts_user_id ON public.posts(user_id);
 CREATE INDEX idx_posts_portfolio_id ON public.posts(portfolio_id);
 CREATE INDEX idx_posts_created_at ON public.posts(created_at);
+CREATE INDEX idx_posts_ticker ON public.posts(ticker) WHERE ticker IS NOT NULL;
 CREATE INDEX idx_post_likes_post_id ON public.post_likes(post_id);
 CREATE INDEX idx_post_comments_post_id ON public.post_comments(post_id);
 CREATE INDEX idx_notifications_user_id ON public.notifications(user_id);
