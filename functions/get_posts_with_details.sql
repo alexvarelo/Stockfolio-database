@@ -4,6 +4,7 @@ CREATE OR REPLACE FUNCTION public.get_posts_with_details(
     p_offset INT DEFAULT 0,
     p_user_id UUID DEFAULT NULL,
     p_portfolio_id UUID DEFAULT NULL,
+    p_author_id UUID DEFAULT NULL,
     p_post_type TEXT DEFAULT NULL,
     p_is_public BOOLEAN DEFAULT NULL,
     p_only_following BOOLEAN DEFAULT false
@@ -73,6 +74,7 @@ AS $$
     WHERE 
         (p_is_public IS NULL OR p.is_public = p_is_public)
         AND (p_portfolio_id IS NULL OR p.portfolio_id = p_portfolio_id)
+        AND (p_author_id IS NULL OR p.user_id = p_author_id)
         AND (p_post_type IS NULL OR p.post_type = p_post_type)
         AND (
             p_only_following = false 

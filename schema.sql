@@ -218,6 +218,7 @@ ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
 
 -- Users can view their own profile and public profiles
 CREATE POLICY "Users can view own profile" ON public.users FOR SELECT USING (auth.uid() = id OR is_public = true);
+CREATE POLICY "Authenticated users can view user details" ON public.users FOR SELECT USING (auth.role() = 'authenticated');
 CREATE POLICY "Users can update own profile" ON public.users FOR UPDATE USING (auth.uid() = id);
 
 -- Portfolios policies
@@ -232,6 +233,17 @@ CREATE POLICY "Users can view own holdings" ON public.holdings FOR SELECT USING 
 CREATE POLICY "Users can manage own holdings" ON public.holdings FOR ALL USING (
     EXISTS (SELECT 1 FROM public.portfolios WHERE id = portfolio_id AND user_id = auth.uid())
 );
+-- Allow users to view holdings from followed users' public portfolios
+CREATE POLICY "Users can view followed users' public holdings" ON public.holdings FOR SELECT USING (
+    EXISTS (
+        SELECT 1 
+        FROM public.portfolios p
+        JOIN public.user_follows uf ON p.user_id = uf.following_id
+        WHERE p.id = portfolio_id 
+        AND uf.follower_id = auth.uid()
+        AND p.is_public = true
+    )
+);
 
 -- Transactions policies
 CREATE POLICY "Users can view own transactions" ON public.transactions FOR SELECT USING (
@@ -241,6 +253,29 @@ CREATE POLICY "Users can manage own transactions" ON public.transactions FOR ALL
     EXISTS (SELECT 1 FROM public.portfolios WHERE id = portfolio_id AND user_id = auth.uid())
 );
 
+-- Portfolio follows policies
+CREATE POLICY "Users can view their own follows"
+ON public.portfolio_follows
+FOR SELECT
+USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can follow public portfolios"
+ON public.portfolio_follows
+FOR INSERT
+WITH CHECK (
+  auth.role() = 'authenticated' AND
+  auth.uid() = user_id AND
+  portfolio_id IN (
+    SELECT id FROM public.portfolios 
+    WHERE is_public = true
+  )
+);
+
+CREATE POLICY "Users can unfollow"
+ON public.portfolio_follows
+FOR DELETE
+USING (auth.uid() = user_id);
+
 -- Posts policies
 CREATE POLICY "Users can view public posts" ON public.posts FOR SELECT USING (is_public = true);
 CREATE POLICY "Users can view own posts" ON public.posts FOR SELECT USING (auth.uid() = user_id);
@@ -249,6 +284,52 @@ CREATE POLICY "Users can manage own posts" ON public.posts FOR ALL USING (auth.u
 -- Notifications policies
 CREATE POLICY "Users can view own notifications" ON public.notifications FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can update own notifications" ON public.notifications FOR UPDATE USING (auth.uid() = user_id);
+
+-- Watchlist items policies
+CREATE POLICY "Users can view own watchlist items" ON public.watchlist_items FOR SELECT USING (
+    EXISTS (
+        SELECT 1 FROM public.watchlists w 
+        WHERE w.id = watchlist_id AND w.user_id = auth.uid()
+    )
+);
+
+CREATE POLICY "Users can manage own watchlist items" ON public.watchlist_items FOR ALL USING (
+    EXISTS (
+        SELECT 1 FROM public.watchlists w 
+        WHERE w.id = watchlist_id AND w.user_id = auth.uid()
+    )
+) WITH CHECK (
+    EXISTS (
+        SELECT 1 FROM public.watchlists w 
+        WHERE w.id = watchlist_id AND w.user_id = auth.uid()
+    )
+);
+
+-- User follows policies
+CREATE POLICY "Users can view their follows and followers" ON public.user_follows
+FOR SELECT
+USING (
+    auth.uid() = follower_id OR 
+    auth.uid() = following_id OR
+    EXISTS (
+        SELECT 1 FROM public.users u 
+        WHERE (u.id = follower_id OR u.id = following_id) 
+        AND u.is_public = true
+    )
+);
+
+CREATE POLICY "Users can follow other users" ON public.user_follows
+FOR INSERT
+WITH CHECK (
+    auth.role() = 'authenticated' AND
+    auth.uid() = follower_id AND
+    follower_id != following_id AND
+    EXISTS (SELECT 1 FROM public.users WHERE id = following_id)
+);
+
+CREATE POLICY "Users can unfollow" ON public.user_follows
+FOR DELETE
+USING (auth.uid() = follower_id);
 
 -- User settings policies
 CREATE POLICY "Users can view own settings" ON public.user_settings FOR SELECT USING (auth.uid() = user_id);
