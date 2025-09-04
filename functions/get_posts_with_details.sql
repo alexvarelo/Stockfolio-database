@@ -7,7 +7,8 @@ CREATE OR REPLACE FUNCTION public.get_posts_with_details(
     p_author_id UUID DEFAULT NULL,
     p_post_type TEXT DEFAULT NULL,
     p_is_public BOOLEAN DEFAULT NULL,
-    p_only_following BOOLEAN DEFAULT false
+    p_only_following BOOLEAN DEFAULT false,
+    p_ticker TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     id UUID,
@@ -76,6 +77,7 @@ AS $$
         AND (p_portfolio_id IS NULL OR p.portfolio_id = p_portfolio_id)
         AND (p_author_id IS NULL OR p.user_id = p_author_id)
         AND (p_post_type IS NULL OR p.post_type = p_post_type)
+        AND (p_ticker IS NULL OR p.ticker = p_ticker)
         AND (
             p_only_following = false 
             OR p_user_id IS NULL 
