@@ -162,6 +162,20 @@ CREATE TABLE public.user_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- API credentials table
+CREATE TABLE public.api_credentials (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    provider_name VARCHAR(100) NOT NULL,
+    client_id TEXT NOT NULL,
+    client_secret TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(provider_name)
+);
+
 -- Create indexes for better performance
 CREATE INDEX idx_holdings_portfolio_id ON public.holdings(portfolio_id);
 CREATE INDEX idx_holdings_ticker ON public.holdings(ticker);
@@ -180,6 +194,8 @@ CREATE INDEX idx_post_likes_post_id ON public.post_likes(post_id);
 CREATE INDEX idx_post_comments_post_id ON public.post_comments(post_id);
 CREATE INDEX idx_notifications_user_id ON public.notifications(user_id);
 CREATE INDEX idx_notifications_is_read ON public.notifications(is_read);
+CREATE INDEX idx_api_credentials_provider ON public.api_credentials(provider_name);
+CREATE INDEX idx_api_credentials_active ON public.api_credentials(is_active) WHERE is_active = true;
 
 -- Create updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -200,6 +216,7 @@ CREATE TRIGGER update_posts_updated_at BEFORE UPDATE ON public.posts FOR EACH RO
 CREATE TRIGGER update_post_comments_updated_at BEFORE UPDATE ON public.post_comments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_watchlists_updated_at BEFORE UPDATE ON public.watchlists FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_user_settings_updated_at BEFORE UPDATE ON public.user_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_api_credentials_updated_at BEFORE UPDATE ON public.api_credentials FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Row Level Security (RLS) policies
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
@@ -333,4 +350,6 @@ USING (auth.uid() = follower_id);
 
 -- User settings policies
 CREATE POLICY "Users can view own settings" ON public.user_settings FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can manage own settings" ON public.user_settings FOR ALL USING (auth.uid() = user_id); 
+CREATE POLICY "Users can manage own settings" ON public.user_settings FOR ALL USING (auth.uid() = user_id);
+
+ 
