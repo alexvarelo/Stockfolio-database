@@ -298,27 +298,104 @@ CREATE POLICY "Users can view public posts" ON public.posts FOR SELECT USING (is
 CREATE POLICY "Users can view own posts" ON public.posts FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage own posts" ON public.posts FOR ALL USING (auth.uid() = user_id);
 
--- Notifications policies
-CREATE POLICY "Users can view own notifications" ON public.notifications FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can update own notifications" ON public.notifications FOR UPDATE USING (auth.uid() = user_id);
+-- Articles policies
+CREATE POLICY "Anyone can view published articles" ON public.articles FOR SELECT USING (status = 'published');
+CREATE POLICY "Users can view their own draft articles" ON public.articles FOR SELECT USING (auth.uid() = metadata->>'author_id' OR status = 'published');
+CREATE POLICY "Service role can manage all articles" ON public.articles FOR ALL USING (auth.role() = 'service_role');
 
--- Watchlist items policies
+-- Article sections policies (inherit from articles)
+CREATE POLICY "Users can view article sections" ON public.article_sections FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.articles a WHERE a.id = article_id AND a.status = 'published')
+);
+CREATE POLICY "Service role can manage article sections" ON public.article_sections FOR ALL USING (auth.role() = 'service_role');
+
+-- Article sources policies (inherit from articles)
+CREATE POLICY "Users can view article sources" ON public.article_sources FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.articles a WHERE a.id = article_id AND a.status = 'published')
+);
+CREATE POLICY "Service role can manage article sources" ON public.article_sources FOR ALL USING (auth.role() = 'service_role');
+
+-- Article engagement policies
+CREATE POLICY "Users can view public article engagement" ON public.article_engagement FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.articles a WHERE a.id = article_id AND a.status = 'published')
+);
+CREATE POLICY "Users can manage their own engagement" ON public.article_engagement FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Service role can manage all engagement" ON public.article_engagement FOR ALL USING (auth.role() = 'service_role');
+
+-- Apply updated_at triggers for articles
+CREATE TRIGGER update_articles_updated_at BEFORE UPDATE ON public.articles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Articles policies
+CREATE POLICY "Anyone can view published articles" ON public.articles FOR SELECT USING (status = 'published');
+CREATE POLICY "Users can view their own draft articles" ON public.articles FOR SELECT USING (auth.uid() = metadata->>'author_id' OR status = 'published');
+CREATE POLICY "Service role can manage all articles" ON public.articles FOR ALL USING (auth.role() = 'service_role');
+
+-- Article sections policies (inherit from articles)
+CREATE POLICY "Users can view article sections" ON public.article_sections FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.articles a WHERE a.id = article_id AND a.status = 'published')
+);
+CREATE POLICY "Service role can manage article sections" ON public.article_sections FOR ALL USING (auth.role() = 'service_role');
+
+-- Article sources policies (inherit from articles)
+CREATE POLICY "Users can view article sources" ON public.article_sources FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.articles a WHERE a.id = article_id AND a.status = 'published')
+);
+CREATE POLICY "Service role can manage article sources" ON public.article_sources FOR ALL USING (auth.role() = 'service_role');
+
+-- Article engagement policies
+CREATE POLICY "Users can view public article engagement" ON public.article_engagement FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.articles a WHERE a.id = article_id AND a.status = 'published')
+);
+CREATE POLICY "Users can manage their own engagement" ON public.article_engagement FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Service role can manage all engagement" ON public.article_engagement FOR ALL USING (auth.role() = 'service_role');
+
+-- Users can view their own watchlist items
 CREATE POLICY "Users can view own watchlist items" ON public.watchlist_items FOR SELECT USING (
+    auth.role() = 'authenticated' AND
     EXISTS (
-        SELECT 1 FROM public.watchlists w 
-        WHERE w.id = watchlist_id AND w.user_id = auth.uid()
+        SELECT 1 FROM public.watchlists w
+        WHERE w.id = watchlist_id
+        AND w.user_id = auth.uid()
     )
 );
 
-CREATE POLICY "Users can manage own watchlist items" ON public.watchlist_items FOR ALL USING (
+-- Users can insert items into their own watchlists
+CREATE POLICY "Users can insert own watchlist items" ON public.watchlist_items FOR INSERT WITH CHECK (
+    auth.role() = 'authenticated' AND
+    auth.uid() IS NOT NULL AND
+    watchlist_id IS NOT NULL AND
     EXISTS (
-        SELECT 1 FROM public.watchlists w 
-        WHERE w.id = watchlist_id AND w.user_id = auth.uid()
+        SELECT 1 FROM public.watchlists w
+        WHERE w.id = watchlist_id
+        AND w.user_id = auth.uid()
+    )
+);
+
+-- Users can update their own watchlist items
+CREATE POLICY "Users can update own watchlist items" ON public.watchlist_items FOR UPDATE USING (
+    auth.role() = 'authenticated' AND
+    EXISTS (
+        SELECT 1 FROM public.watchlists w
+        WHERE w.id = watchlist_id
+        AND w.user_id = auth.uid()
     )
 ) WITH CHECK (
+    auth.role() = 'authenticated' AND
+    watchlist_id IS NOT NULL AND
     EXISTS (
-        SELECT 1 FROM public.watchlists w 
-        WHERE w.id = watchlist_id AND w.user_id = auth.uid()
+        SELECT 1 FROM public.watchlists w
+        WHERE w.id = watchlist_id
+        AND w.user_id = auth.uid()
+    )
+);
+
+-- Users can delete their own watchlist items
+CREATE POLICY "Users can delete own watchlist items" ON public.watchlist_items FOR DELETE USING (
+    auth.role() = 'authenticated' AND
+    EXISTS (
+        SELECT 1 FROM public.watchlists w
+        WHERE w.id = watchlist_id
+        AND w.user_id = auth.uid()
     )
 );
 
@@ -348,8 +425,74 @@ CREATE POLICY "Users can unfollow" ON public.user_follows
 FOR DELETE
 USING (auth.uid() = follower_id);
 
--- User settings policies
-CREATE POLICY "Users can view own settings" ON public.user_settings FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can manage own settings" ON public.user_settings FOR ALL USING (auth.uid() = user_id);
+-- Articles table for generated content
+CREATE TABLE public.articles (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    slug VARCHAR(500) UNIQUE NOT NULL,
+    summary TEXT,
+    content JSONB NOT NULL, -- Structured content with sections, paragraphs, etc.
+    article_type VARCHAR(50) NOT NULL CHECK (article_type IN ('TICKER_ANALYSIS', 'NEWS_SUMMARY', 'MARKET_OVERVIEW')),
+    tickers TEXT[], -- Array of tickers this article relates to
+    tags TEXT[], -- Array of tags for categorization
+    author VARCHAR(255), -- Could be AI or user
+    status VARCHAR(20) DEFAULT 'published' CHECK (status IN ('draft', 'published', 'archived')),
+    view_count INTEGER DEFAULT 0,
+    is_premium BOOLEAN DEFAULT false,
+    metadata JSONB DEFAULT '{}', -- Additional metadata like sources, generated_at, etc.
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
- 
+-- Article sections for more granular content structure (optional)
+CREATE TABLE public.article_sections (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    article_id UUID REFERENCES public.articles(id) ON DELETE CASCADE NOT NULL,
+    section_title VARCHAR(255) NOT NULL,
+    section_order INTEGER NOT NULL,
+    content JSONB NOT NULL, -- Array of paragraphs or structured content
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(article_id, section_order)
+);
+
+-- Article sources/references
+CREATE TABLE public.article_sources (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    article_id UUID REFERENCES public.articles(id) ON DELETE CASCADE NOT NULL,
+    source_type VARCHAR(50) NOT NULL CHECK (source_type IN ('NEWS_API', 'FINANCIAL_DATA', 'USER_INPUT', 'AI_GENERATED')),
+    source_url TEXT,
+    source_title VARCHAR(500),
+    source_date DATE,
+    relevance_score DECIMAL(3,2), -- 0.00 to 1.00
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Article engagement metrics
+CREATE TABLE public.article_engagement (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    article_id UUID REFERENCES public.articles(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+    engagement_type VARCHAR(20) NOT NULL CHECK (engagement_type IN ('view', 'like', 'share', 'bookmark', 'comment')),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(article_id, user_id, engagement_type)
+);
+
+-- Create indexes for articles
+CREATE INDEX idx_articles_type ON public.articles(article_type);
+CREATE INDEX idx_articles_tickers ON public.articles USING GIN(tickers);
+CREATE INDEX idx_articles_tags ON public.articles USING GIN(tags);
+CREATE INDEX idx_articles_status ON public.articles(status);
+CREATE INDEX idx_articles_created_at ON public.articles(created_at DESC);
+CREATE INDEX idx_articles_slug ON public.articles(slug);
+
+CREATE INDEX idx_article_sections_article_id ON public.article_sections(article_id);
+CREATE INDEX idx_article_sections_order ON public.article_sections(article_id, section_order);
+
+CREATE INDEX idx_article_sources_article_id ON public.article_sources(article_id);
+CREATE INDEX idx_article_sources_type ON public.article_sources(source_type);
+
+CREATE INDEX idx_article_engagement_article_id ON public.article_engagement(article_id);
+CREATE INDEX idx_article_engagement_user_id ON public.article_engagement(user_id);
+CREATE INDEX idx_article_engagement_type ON public.article_engagement(engagement_type);
