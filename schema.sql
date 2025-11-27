@@ -293,6 +293,53 @@ ON public.portfolio_follows
 FOR DELETE
 USING (auth.uid() = user_id);
 
+-- API credentials policies
+-- Users can view active API credentials for public providers
+CREATE POLICY "Users can view active public api credentials" ON public.api_credentials FOR SELECT USING (
+    auth.role() = 'authenticated' AND
+    is_active = true AND
+    (metadata->>'visibility' = 'public' OR metadata->>'visibility' IS NULL)
+);
+
+-- Service role can access all API credentials (for machine-to-machine operations)
+CREATE POLICY "Service role can access all api credentials" ON public.api_credentials FOR SELECT USING (
+    auth.role() = 'service_role'
+);
+
+-- Service role can manage all API credentials (for system operations)
+CREATE POLICY "Service role can manage api credentials" ON public.api_credentials FOR ALL USING (
+    auth.role() = 'service_role'
+);
+
+-- Users can view API credentials they own (if user_id is stored in metadata)
+CREATE POLICY "Users can view own api credentials" ON public.api_credentials FOR SELECT USING (
+    auth.role() = 'authenticated' AND
+    auth.uid()::text = (metadata->>'user_id')
+);
+
+-- Authenticated users can insert their own API credentials
+CREATE POLICY "Users can insert own api credentials" ON public.api_credentials FOR INSERT WITH CHECK (
+    auth.role() = 'authenticated' AND
+    auth.uid() IS NOT NULL AND
+    auth.uid()::text = (metadata->>'user_id')
+);
+
+-- Users can update their own API credentials
+CREATE POLICY "Users can update own api credentials" ON public.api_credentials FOR UPDATE USING (
+    auth.role() = 'authenticated' AND
+    auth.uid()::text = (metadata->>'user_id')
+) WITH CHECK (
+    auth.role() = 'authenticated' AND
+    auth.uid()::text = (metadata->>'user_id')
+);
+
+-- Users can deactivate their own API credentials
+CREATE POLICY "Users can deactivate own api credentials" ON public.api_credentials FOR UPDATE USING (
+    auth.role() = 'authenticated' AND
+    auth.uid()::text = (metadata->>'user_id') AND
+    is_active = false
+);
+
 -- Posts policies
 CREATE POLICY "Users can view public posts" ON public.posts FOR SELECT USING (is_public = true);
 CREATE POLICY "Users can view own posts" ON public.posts FOR SELECT USING (auth.uid() = user_id);

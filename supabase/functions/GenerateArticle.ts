@@ -5,6 +5,53 @@ const supabase = createClient(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABA
   }
 });
 
+// Helper function to get relevant image URL based on article type and tickers
+async function getArticleImageUrl(type: string, tickers?: string[]): Promise<string | null> {
+  try {
+    // Use a stock photo service - you can replace this with your preferred service
+    const imageKeywords = getImageKeywords(type, tickers);
+
+    // Try to get an image from Unsplash API (free, no API key needed for basic usage)
+    const query = encodeURIComponent(imageKeywords);
+    const unsplashUrl = `https://api.unsplash.com/photos/random?query=${query}&orientation=landscape&count=1&client_id=${Deno.env.get('UNSPLASH_ACCESS_KEY') || 'demo'}`;
+
+    const response = await fetch(unsplashUrl);
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.urls && data.urls.regular) {
+        return data.urls.regular;
+      }
+    }
+
+    // Fallback: Use a generic financial image service or return null
+    // You could also use Pexels API, Pixabay, or any other service here
+
+    return null;
+  } catch (error) {
+    console.error('Failed to fetch article image:', error);
+    return null;
+  }
+}
+
+// Helper function to determine relevant keywords for image search
+function getImageKeywords(type: string, tickers?: string[]): string {
+  const baseKeywords = {
+    'TICKER_ANALYSIS': 'financial analysis, stock market, investment',
+    'NEWS_SUMMARY': 'financial news, market updates, business news',
+    'MARKET_OVERVIEW': 'stock market, financial data, investment portfolio'
+  };
+
+  let keywords = baseKeywords[type as keyof typeof baseKeywords] || 'finance, business';
+
+  // Add ticker-specific keywords if available
+  if (tickers && tickers.length > 0) {
+    const tickerKeywords = tickers.slice(0, 3).join(', '); // Limit to first 3 tickers
+    keywords += `, ${tickerKeywords}`;
+  }
+
+  return keywords;
+}
+
 // Helper function to generate slug from title
 function generateSlug(title: string): string {
   return title
@@ -14,8 +61,6 @@ function generateSlug(title: string): string {
     .replace(/-+/g, '-')
     .trim();
 }
-
-// Helper function to build prompt for article generation
 function buildArticlePrompt(type: string, tickers?: string[], newsData?: any[]): any[] {
   let userMessage = '';
 
@@ -297,6 +342,10 @@ Deno.serve(async (req) => {
 
     // Generate slug and prepare article for database
     const slug = generateSlug(articleData.title);
+
+    // Fetch relevant image URL for the article
+    const imageUrl = await getArticleImageUrl(type, tickers);
+
     const articleRecord = {
       title: articleData.title,
       slug,
@@ -310,7 +359,8 @@ Deno.serve(async (req) => {
       metadata: {
         ...articleData.metadata,
         generated_at: new Date().toISOString(),
-        source: 'supabase_function'
+        source: 'supabase_function',
+        ...(imageUrl && { image_url: imageUrl })
       }
     };
 
