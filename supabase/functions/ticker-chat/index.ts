@@ -40,7 +40,7 @@ async function handlePortfolioOperation(operation: string, ticker: string, portf
 
 Deno.serve(async (req) => {
   const headers = corsHeaders();
-  
+
   // Handle preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers });
@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
 
     // Parse request body
     const { message, ticker, portfolioId, history = [] } = await req.json();
-    
+
     if (!ticker) {
       return new Response(JSON.stringify({ error: 'Ticker symbol is required' }), {
         status: 400,
@@ -68,10 +68,10 @@ Deno.serve(async (req) => {
     // Check for portfolio operations
     const addToPortfolio = message.toLowerCase().includes('add to portfolio');
     const removeFromPortfolio = message.toLowerCase().includes('remove from portfolio');
-    
+
     if ((addToPortfolio || removeFromPortfolio) && !portfolioId) {
-      return new Response(JSON.stringify({ 
-        error: 'Portfolio ID is required for this operation' 
+      return new Response(JSON.stringify({
+        error: 'Portfolio ID is required for this operation'
       }), { status: 400, headers });
     }
 
@@ -99,12 +99,12 @@ Deno.serve(async (req) => {
     }
 
     // Determine max tokens based on message type
-    const isSimpleQuery = message.trim().length < 50 && 
-                         !message.toLowerCase().includes('analyze') &&
-                         !message.toLowerCase().includes('compare');
-    
+    const isSimpleQuery = message.trim().length < 50 &&
+      !message.toLowerCase().includes('analyze') &&
+      !message.toLowerCase().includes('compare');
+
     const maxTokens = isSimpleQuery ? 150 : 350;
-    
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
         'X-Title': 'Ticker Chat'
       },
       body: JSON.stringify({
-        model: 'x-ai/grok-4-fast:free',
+        model: Deno.env.get('LLM_MODEL') ?? 'x-ai/grok-4-fast:free',
         messages,
         temperature: isSimpleQuery ? 0.3 : 0.7, // Lower temp for simpler responses
         max_tokens: maxTokens,
@@ -125,15 +125,15 @@ Deno.serve(async (req) => {
     if (!response.ok) {
       const error = await response.text();
       console.error('OpenRouter API error:', error);
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         error: 'Failed to get response from AI service',
-        details: error 
+        details: error
       }), { status: 500, headers });
     }
 
     const data = await response.json();
     let content = data.choices?.[0]?.message?.content || 'Sorry, I could not process your request.';
-    
+
     // Post-process response to make it more concise
     content = content
       .replace(/\s+/g, ' ') // Replace multiple spaces with single space
@@ -149,12 +149,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       response: content,
       ticker,
       timestamp: new Date().toISOString(),
       isTruncated: content.endsWith('...') || content.length >= 290
-    }), { 
+    }), {
       headers: {
         ...headers,
         'Content-Encoding': 'gzip',
@@ -165,12 +165,12 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('Error in ticker-chat function:', error);
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       error: 'An unexpected error occurred',
-      details: error.message 
-    }), { 
-      status: 500, 
-      headers: corsHeaders() 
+      details: error.message
+    }), {
+      status: 500,
+      headers: corsHeaders()
     });
   }
 });

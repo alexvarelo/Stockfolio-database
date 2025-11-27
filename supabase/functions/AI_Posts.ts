@@ -21,7 +21,7 @@ Deno.serve(async () => {
         "X-Title": "Daily Stock Posts"
       },
       body: JSON.stringify({
-        model: "x-ai/grok-4-fast:free",
+        model: Deno.env.get("LLM_MODEL") ?? "x-ai/grok-4-fast:free",
         messages: [
           {
             role: "system",
@@ -85,7 +85,7 @@ Rules:
 
     // 4. Insert into Supabase (service role key required)
     const { error } = await supabase.from("posts").insert(rows);
-    
+
     if (error) {
       console.error("Insert error:", error);
       return new Response("Database insert failed", {

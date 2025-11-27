@@ -5,7 +5,7 @@ const supabase = createClient(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABA
   }
 });
 function buildPrompt(holdings, portfolioId) {
-  const lines = holdings.map((h)=>{
+  const lines = holdings.map((h) => {
     const qty = Number(h.quantity ?? 0);
     const avg = Number(h.average_price ?? 0);
     const invested = Number(h.total_invested ?? qty * avg);
@@ -13,7 +13,7 @@ function buildPrompt(holdings, portfolioId) {
     const notes = h.notes ? `notes=${h.notes}` : '';
     return `- ${ticker}: quantity=${qty}, average_price=${avg.toFixed(2)}, total_invested=${invested.toFixed(2)} ${notes}`;
   });
-  const totalValue = holdings.reduce((s, h)=>s + Number(h.total_invested ?? Number(h.quantity ?? 0) * Number(h.average_price ?? 0)), 0);
+  const totalValue = holdings.reduce((s, h) => s + Number(h.total_invested ?? Number(h.quantity ?? 0) * Number(h.average_price ?? 0)), 0);
   const userMessage = `You are a financial assistant. Return ONLY JSON (application/json).
 
 Portfolio id: ${portfolioId}
@@ -59,7 +59,7 @@ function corsHeaders() {
     'Content-Type': 'application/json'
   };
 }
-Deno.serve(async (req)=>{
+Deno.serve(async (req) => {
   const HEADERS = corsHeaders();
   try {
     // Preflight
@@ -77,7 +77,7 @@ Deno.serve(async (req)=>{
         headers: HEADERS
       });
     }
-    const body = await req.json().catch(()=>null);
+    const body = await req.json().catch(() => null);
     if (!body || !body.portfolioId) {
       return new Response(JSON.stringify({
         error: 'Missing portfolioId in JSON body.'
@@ -123,12 +123,12 @@ Deno.serve(async (req)=>{
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'x-ai/grok-4-fast:free',
+        model: Deno.env.get('LLM_MODEL') ?? 'x-ai/grok-4-fast:free',
         messages
       })
     });
     if (!llmResponse.ok) {
-      const text = await llmResponse.text().catch(()=>'');
+      const text = await llmResponse.text().catch(() => '');
       console.error('LLM error', llmResponse.status, text);
       return new Response(JSON.stringify({
         error: 'LLM provider returned an error.',
@@ -138,7 +138,7 @@ Deno.serve(async (req)=>{
         headers: HEADERS
       });
     }
-    const llmJson = await llmResponse.json().catch(()=>null);
+    const llmJson = await llmResponse.json().catch(() => null);
     let assistantContent = null;
     try {
       if (llmJson?.choices && Array.isArray(llmJson.choices) && llmJson.choices[0]?.message?.content) {
