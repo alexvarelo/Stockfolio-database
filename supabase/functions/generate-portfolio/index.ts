@@ -30,18 +30,36 @@ Deno.serve(async (req) => {
             )
         }
 
+        console.log("Auth Header received:", authHeader.substring(0, 20) + "...");
+
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+
+        if (!supabaseUrl || !supabaseAnonKey) {
+            console.error("Missing Supabase env vars");
+            return new Response(
+                JSON.stringify({ error: 'Server configuration error' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+            )
+        }
+
         const supabaseClient = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-            { global: { headers: { Authorization: authHeader } } }
+            supabaseUrl,
+            supabaseAnonKey,
+            {
+                global: { headers: { Authorization: authHeader } },
+                auth: { persistSession: false }
+            }
         )
 
         // Get the user from the token
-        const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token)
 
         if (userError || !user) {
+            console.error("Auth error:", userError);
             return new Response(
-                JSON.stringify({ error: 'Invalid user token' }),
+                JSON.stringify({ error: 'Invalid user token', details: userError?.message }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
             )
         }
