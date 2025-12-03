@@ -5,6 +5,20 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Helper to fetch price from Yahoo Finance
+async function fetchPrice(ticker: string): Promise<number | null> {
+    try {
+        const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`);
+        if (!response.ok) return null;
+        const data = await response.json();
+        const price = data.chart?.result?.[0]?.meta?.regularMarketPrice;
+        return price || null;
+    } catch (e) {
+        console.error(`Failed to fetch price for ${ticker}:`, e);
+        return null;
+    }
+}
+
 Deno.serve(async (req) => {
     // Handle CORS preflight requests
     if (req.method === 'OPTIONS') {
@@ -84,19 +98,30 @@ Deno.serve(async (req) => {
             {
               "name": "Portfolio Name",
               "description": "Portfolio Description",
+              "total_investment": 10000, // Optional, required for percentage requests
               "holdings": [
-                { "ticker": "AAPL", "quantity": 10, "average_price": 150.00 }
+                { 
+                  "ticker": "AAPL", 
+                  "quantity": 10, // Optional if allocation_percentage is provided
+                  "allocation_percentage": 0, // Optional, 0-100
+                  "average_price": 150.00 // Optional, will be fetched if missing
+                }
               ],
               "missing_info": []
             }
 
             Rules:
             1. "name" is REQUIRED. If missing, add "Portfolio name" to "missing_info".
-            2. "holdings" are optional. If present, each holding MUST have "ticker", "quantity", and "average_price".
-            3. If a holding is mentioned but lacks quantity or price, add a specific message to "missing_info" like "Quantity for Apple" or "Average price for Tesla".
-            4. If the user provides a company name (e.g., "Apple"), convert it to the ticker ("AAPL").
-            5. "description" is optional. If not provided, generate a brief one based on the holdings or name.
-            6. Return ONLY valid JSON. No markdown formatting.`
+            2. If the user provides explicit holdings (e.g., "10 shares of Apple"), extract "ticker" and "quantity".
+            3. If the user provides THEMATIC or PERCENTAGE-based requests (e.g., "20% AI stocks"):
+               a. You MUST have a "Total Investment Amount" (budget). Extract it to "total_investment".
+               b. If the budget is missing, add "Total investment amount" to "missing_info".
+               c. Select 3-5 representative tickers for each theme.
+               d. Set "allocation_percentage" for each ticker based on the user's request.
+            4. If a holding is mentioned but lacks quantity/price AND it's not a percentage request, add specific missing info.
+            5. If the user provides a company name, convert it to the ticker.
+            6. "description" is optional.
+            7. Return ONLY valid JSON. No markdown formatting.`
                     },
                     {
                         role: "user",
@@ -140,6 +165,41 @@ Deno.serve(async (req) => {
             )
         }
 
+        // Process holdings to calculate quantities and prices
+        const processedHoldings = [];
+        if (parsedData.holdings && parsedData.holdings.length > 0) {
+            for (const h of parsedData.holdings) {
+                let quantity = h.quantity;
+                let price = h.average_price;
+
+                // Fetch real-time price if missing or needed for calculation
+                if (!price || (h.allocation_percentage && parsedData.total_investment)) {
+                    const fetchedPrice = await fetchPrice(h.ticker);
+                    if (fetchedPrice) {
+                        price = fetchedPrice;
+                    } else if (!price) {
+                        // If we can't fetch and AI didn't provide, default to 0 (or handle error)
+                        console.warn(`Could not fetch price for ${h.ticker}`);
+                        price = 0;
+                    }
+                }
+
+                // Calculate quantity from allocation if needed
+                if (!quantity && h.allocation_percentage && parsedData.total_investment && price > 0) {
+                    const allocationAmount = (parsedData.total_investment * h.allocation_percentage) / 100;
+                    quantity = allocationAmount / price;
+                }
+
+                if (quantity > 0) {
+                    processedHoldings.push({
+                        ticker: h.ticker.toUpperCase(),
+                        quantity: quantity,
+                        average_price: price
+                    });
+                }
+            }
+        }
+
         // Insert Portfolio
         const { data: portfolio, error: portfolioError } = await supabaseClient
             .from('portfolios')
@@ -160,11 +220,11 @@ Deno.serve(async (req) => {
             )
         }
 
-        // Insert Holdings if any
-        if (parsedData.holdings && parsedData.holdings.length > 0) {
-            const holdingsToInsert = parsedData.holdings.map((h: any) => ({
+        // Insert Holdings
+        if (processedHoldings.length > 0) {
+            const holdingsToInsert = processedHoldings.map(h => ({
                 portfolio_id: portfolio.id,
-                ticker: h.ticker.toUpperCase(),
+                ticker: h.ticker,
                 quantity: h.quantity,
                 average_price: h.average_price
             }));
@@ -175,16 +235,13 @@ Deno.serve(async (req) => {
 
             if (holdingsError) {
                 console.error("Holdings insert error:", holdingsError);
-                // Note: Portfolio was created, but holdings failed. 
-                // We might want to delete the portfolio or just warn. 
-                // For now, returning error but portfolio exists.
                 return new Response(
                     JSON.stringify({
                         success: true,
                         portfolio_id: portfolio.id,
                         warning: 'Portfolio created but holdings failed: ' + holdingsError.message
                     }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 } // Returning 200 because partial success
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
                 )
             }
         }
@@ -193,7 +250,8 @@ Deno.serve(async (req) => {
             JSON.stringify({
                 success: true,
                 portfolio_id: portfolio.id,
-                message: 'Portfolio created successfully'
+                message: 'Portfolio created successfully',
+                holdings_count: processedHoldings.length
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         )
